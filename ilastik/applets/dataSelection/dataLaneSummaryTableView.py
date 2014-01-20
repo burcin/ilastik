@@ -4,8 +4,9 @@ from PyQt4.QtGui import QTableView, QHeaderView, QItemSelection, QItemSelectionM
 
 from dataLaneSummaryTableModel import DataLaneSummaryTableModel, LaneColumn, DatasetInfoColumn
 from addFileButton import AddFileButton
+from buttonOverlay import TableViewWithButtonOverlay
 
-class DataLaneSummaryTableView(QTableView):
+class DataLaneSummaryTableView(TableViewWithButtonOverlay):
     dataLaneSelected = pyqtSignal(int) # Signature: (laneIndex)
     
     addFilesRequested = pyqtSignal(int) # Signature: (roleIndex)
