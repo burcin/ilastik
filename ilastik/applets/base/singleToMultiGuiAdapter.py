@@ -14,6 +14,17 @@
 #
 # Copyright 2011-2014, the ilastik developers
 
+# on windows, the number of "user objects" (widgets) an application can
+# use is limited:
+#
+# http://social.msdn.microsoft.com/Forums/windows/en-US/73aaa1f3-30a7-4593-b299-7ec1fd582b27/the-current-process-has-used-all-of-its-system-allowance-of-handles-for-window-manager-objects?forum=winforms
+#
+# To avoid running into this limit, each adapter uses an LRU cache and
+# keeps open at most LRU_CACHE_SIZE viewers
+LRU_CACHE_SIZE=32
+
+from ilastik.utility.lru_cache import lru_cache
+
 class SingleToMultiGuiAdapter( object ):
     """
     Utility class used by the StandardApplet to wrap several single-image 
@@ -22,23 +33,26 @@ class SingleToMultiGuiAdapter( object ):
     def __init__(self, parentApplet, singleImageGuiFactory, topLevelOperator):
         self.singleImageGuiFactory = singleImageGuiFactory
         self._imageLaneIndex = None
-        self._guis = []
         self._tempDrawers = {}
         self.topLevelOperator = topLevelOperator
         self._enabled = False
 
+        # create LRU cache with maximum size LRU_CACHE_SIZE and a callback
+        # function that calls stopAndCleanUp() on the cached object.
+        self._cachedGUIs = lru_cache(LRU_CACHE_SIZE,
+                callback_fn = lambda k, v: v.stopAndCleanUp())(
+                        self.singleImageGuiFactory)
+
     def currentGui(self):
         """
         Return the single-image GUI for the currently selected image lane.
-        If it doesn't exist yet, create it.
+
+        GUIs are kept in an LRU cache and created / cleaned as necessary.
         """
         if self._imageLaneIndex is None:
             return None
 
-        # Create first if necessary
-        if self._guis[self._imageLaneIndex] is None:
-            self._guis[self._imageLaneIndex] = self.singleImageGuiFactory( self._imageLaneIndex )
-        return self._guis[self._imageLaneIndex]
+        return self._cachedGUIs(self._imageLaneIndex)
 
     def appletDrawer(self):
         """
@@ -87,34 +101,22 @@ class SingleToMultiGuiAdapter( object ):
         """
         Called by the workflow when the project is closed and the GUIs are about to be discarded.
         """
-        for gui in self._guis:
-            if gui is not None:
-                gui.stopAndCleanUp()
-        # Discard all sub-guis.
-        self._guis = []
+        self._cachedGUIs.cache_clear()
 
     def imageLaneAdded(self, laneIndex):
         """
         Called by the workflow when a new image lane has been created.
         """
-        assert len(self._guis) == laneIndex
-        # We DELAY creating the GUI for this lane until the shell actually needs to view it.
-        self._guis.append(None)
+        pass
 
     def imageLaneRemoved(self, laneIndex, finalLength):
         """
         Called by the workflow when an image lane has been destroyed.
         """
-        if len(self._guis) > finalLength:
-            # Remove the GUI and clean it up.
-            gui = self._guis.pop(laneIndex)
-            if gui is not None:
-                gui.stopAndCleanUp()
+        pass
     
     def setEnabled(self, enabled):
         self._enabled = enabled
-        for gui in filter(lambda x:x, self._guis):
-            gui.setEnabled(enabled)
         for blank_drawer in self._tempDrawers.values():
             # Late import here to avoid importing sip in headless mode.
             import sip

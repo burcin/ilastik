@@ -10,6 +10,8 @@
 #
 # licensed under the PSF license
 #      https://docs.python.org/3.3/license.html
+#
+# modified to support callback functions for custom cleanup code.
 
 
 from collections import namedtuple
@@ -47,7 +49,7 @@ def _make_key(args, kwds, typed,
         return key[0]
     return _HashedSeq(key)
 
-def lru_cache(maxsize=100, typed=False):
+def lru_cache(maxsize=100, typed=False, callback_fn=None):
     """Least-recently-used cache decorator.
 
     If *maxsize* is set to None, the LRU features are disabled and the cache
@@ -56,6 +58,9 @@ def lru_cache(maxsize=100, typed=False):
     If *typed* is True, arguments of different types will be cached separately.
     For example, f(3.0) and f(3) will be treated as distinct calls with
     distinct results.
+
+    If *callback_fn* is provided, this function is called as callback_fn(key,
+    value) before removing an item from the cache.
 
     Arguments to the cached function must be hashable.
 
@@ -147,6 +152,8 @@ def lru_cache(maxsize=100, typed=False):
                         oldvalue = root[RESULT]
                         root[KEY] = root[RESULT] = None
                         # now update the cache dictionary for the new links
+                        if callback_fn:
+                            callback_fn(oldkey, oldvalue)
                         del cache[oldkey]
                         cache[key] = oldroot
                     else:
@@ -165,6 +172,9 @@ def lru_cache(maxsize=100, typed=False):
         def cache_clear():
             """Clear the cache and cache statistics"""
             with lock:
+                if callback_fn:
+                    for key, val in cache.iteritems():
+                        callback_fn(key, val[RESULT])
                 cache.clear()
                 root = nonlocal_root[0]
                 root[:] = [root, root, None, None]
